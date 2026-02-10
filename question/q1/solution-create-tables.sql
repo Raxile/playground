@@ -294,3 +294,192 @@ ON u.id = o.user_id
 GROUP BY u.id
 ) AS d
 WHERE d.total_order>3
+
+-- 17. Find users whose total spending is greater than the average user spending.
+
+-- 1 total spending per order ID
+
+SELECT 
+order_id,
+SUM(quantity*price)AS total_spending
+FROM order_items
+GROUP BY order_id;
+
+
+-- 2 total spending per user id 
+
+SELECT 
+o.user_id,
+SUM(a.total_spending) AS total_spending
+FROM orders o
+JOIN (SELECT 
+    order_id,
+    SUM(quantity*price)AS total_spending
+    FROM order_items
+    GROUP BY order_id
+    ) a
+ON o.id = a.order_id
+GROUP BY user_id;
+
+-- 3 total spending from above avg
+SELECT 
+x.user_id,
+x.total_spending
+FROM (
+    SELECT 
+    o.user_id,
+    SUM(a.total_spending) AS total_spending
+    FROM orders o
+    JOIN (SELECT 
+        order_id,
+        SUM(quantity*price)AS total_spending
+        FROM order_items
+        GROUP BY order_id
+        ) a
+    ON o.id = a.order_id
+    GROUP BY user_id
+) x
+WHERE x.total_spending > (
+    SELECT AVG(total_spending) FROM (
+        SELECT 
+        o.user_id,
+        SUM(a.total_spending) AS total_spending
+        FROM orders o
+        JOIN (SELECT 
+            order_id,
+            SUM(quantity*price)AS total_spending
+            FROM order_items
+            GROUP BY order_id
+            ) a
+        ON o.id = a.order_id
+        GROUP BY user_id
+    ) y
+);
+
+-- CHATGPT ans
+SELECT 
+    o.user_id,
+    SUM(oi.quantity * oi.price) AS total_spending
+FROM orders o
+JOIN order_items oi ON o.id = oi.order_id
+GROUP BY o.user_id
+HAVING SUM(oi.quantity * oi.price) > (
+    SELECT AVG(user_total)
+    FROM (
+        SELECT 
+            o.user_id,
+            SUM(oi.quantity * oi.price) AS user_total
+        FROM orders o
+        JOIN order_items oi ON o.id = oi.order_id
+        GROUP BY o.user_id
+    ) t
+);
+
+-- 18. Find the second highest spending user.
+
+SELECT
+o.user_id,
+SUM(oi.quantity * oi.price) AS total_spending
+FROM orders o 
+JOIN order_items oi
+ON o.id = oi.order_id
+GROUP BY o.user_id 
+ORDER BY total_spending DESC LIMIT 1 OFFSET 1;
+
+
+-- chatgpt ans 
+
+SELECT *
+FROM (
+    SELECT
+        o.user_id,
+        SUM(oi.quantity * oi.price) AS total_spending,
+        DENSE_RANK() OVER (
+            ORDER BY SUM(oi.quantity * oi.price) DESC
+        ) AS rnk
+    FROM orders o
+    JOIN order_items oi ON o.id = oi.order_id
+    GROUP BY o.user_id
+) t
+WHERE rnk = 2;
+
+-- 19. Delete cancelled orders older than 7 days.
+
+-- select 
+
+SELECT * FROM orders
+WHERE status = 'cancelled'
+AND order_date < NOW() - INTERVAL '7 days';
+
+--  delete order items
+
+DELETE FROM order_items
+WHERE order_id IN (
+    SELECT id FROM orders
+    WHERE status = 'cancelled'
+    AND order_date < NOW() - INTERVAL '7 days'
+);
+
+--  delete orders
+
+
+DELETE FROM orders
+WHERE status = 'cancelled'
+AND order_date < NOW() - INTERVAL '7 days';
+
+-- 20. Update product stock when an order is placed.
+
+UPDATE products p
+SET stock = stock - oi.quantity
+FROM order_items oi
+WHERE p.id = oi.product_id
+AND oi.order_id = 1
+AND p.stock >= oi.quantity;
+
+-- 21. Find users who ordered every product in category 'Electronics'.
+SELECT
+oi.id,
+oi.order_id,
+p.id AS product_id,
+p.category,
+p.name
+FROM order_items oi
+JOIN products p
+ON oi.product_id = p.id
+AND p.category = 'Electronics';
+
+
+
+-- 21. Find users who ordered every product in category 'Electronics'.
+INSERT INTO users (name, email, country)
+VALUES ('Electro Master', 'electro.master@example.com', 'USA');
+
+
+INSERT INTO orders (user_id, status)
+VALUES (11, 'delivered')
+RETURNING id;
+
+
+INSERT INTO order_items (order_id, product_id, quantity, price)
+SELECT 
+    18,              -- your actual order_id
+    id,
+    1,
+    price
+FROM products
+WHERE category = 'Electronics';
+
+SELECT 
+    u.id,
+    u.name
+FROM users u
+JOIN orders o ON u.id = o.user_id
+JOIN order_items oi ON o.id = oi.order_id
+JOIN products p ON oi.product_id = p.id
+WHERE p.category = 'Electronics'
+GROUP BY u.id, u.name
+HAVING COUNT(DISTINCT p.id) = (
+    SELECT COUNT(*)
+    FROM products
+    WHERE category = 'Electronics'
+);
